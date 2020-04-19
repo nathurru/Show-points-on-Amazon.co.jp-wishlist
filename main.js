@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Show points on Amazon.co.jp wishlist
-// @version      20.4.0
+// @version      20.4.1
 // @description  Amazon.co.jpの欲しいものリストで、Kindleの商品にポイントを表示しようとします
-// @namespace    https://github.com/nathurru/Show-points-on-Amazon.co.jp-wishlist
+// @namespace    https://greasyfork.org/ja/users/165645-agn5e3
 // @author       Nathurru
 // @match        https://www.amazon.co.jp/*/wishlist/*
 // @match        https://www.amazon.co.jp/wishlist/*
@@ -82,9 +82,12 @@
             GM_setValue(key, JSON.stringify(data));
         },
         load(key) {
-            const data = JSON.parse(GM_getValue(key) ?? null);
+            const data = GM_getValue(key);
+            if (isUndefined(data)) {
+                return null;
+            }
             console.log('LOAD: ' + key, data);
-            return data;
+            return JSON.parse(data);
         },
         exists(key) {
             return !isUndefined(GM_getValue(key));
