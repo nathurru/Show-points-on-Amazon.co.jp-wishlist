@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Show points on Amazon.co.jp wishlist
-// @version      20.4.2
+// @version      20.4.3
 // @description  Amazon.co.jpの欲しいものリストで、Kindleの商品にポイントを表示しようとします
 // @namespace    https://greasyfork.org/ja/users/165645-agn5e3
 // @author       Nathurru
@@ -281,11 +281,20 @@
     }
 
     const lowPriceBook = (async (isbns) => Promise.all(isbns.map(async (isbn) => {
-            const request = await get(url.ndl(isbn));
-            const data = {
-                isbn: isbn,
-                price: await parser.price(request.responseXML),
+            let data;
+            try {
+                const request = await get(url.ndl(isbn));
+                data = {
+                    isbn: isbn,
+                    price: await parser.price(request.responseXML),
+                }
+            } catch (e) {
+                data = {
+                    isbn: isbn,
+                    price: null,
+                }
             }
+
             console.log(data);
             return data;
         })).then((prices) => {
@@ -397,8 +406,10 @@
                 '</td>' +
                 '</tr>';
 
-            const element = dom.querySelector('#buybox tbody') ?? dom.querySelector("#buyOneClick tbody");
-
+            let element = dom.querySelector('#buybox tbody');
+            if (isNull(element)) {
+                element = dom.querySelector("#buyOneClick tbody");
+            }
             if (!isNull(element)) {
                 element.insertAdjacentHTML('afterbegin', html);
             }
@@ -425,8 +436,13 @@
                 '  </td>' +
                 '</tr>';
 
-            const element = dom.querySelector('#buybox tbody') ?? dom.querySelector("#buyOneClick tbody");
-
+            let element = dom.querySelector('#buybox tbody');
+            if (isNull(element)) {
+                element = dom.querySelector("#buyOneClick tbody");
+            }
+            if (!isNull(element)) {
+                element.insertAdjacentHTML('afterbegin', html);
+            }
             if (!isNull(element)) {
                 element.insertAdjacentHTML('beforeend', html);
             }
