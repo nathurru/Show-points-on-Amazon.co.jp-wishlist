@@ -37,7 +37,7 @@
     const isNull = value => value === null;
     const isUndefined = value => value === undefined;
 
-    const rate = ((numerator, denominator) => denominator === 0 ? 0 : Math.floor(numerator / denominator * 100));
+    const rate = ((numerator, denominator) => denominator === 0 ? 0 : Math.ceil(numerator / denominator * 100));
 
     const random = max => Math.floor(Math.random() * Math.floor(max));
 
