@@ -441,9 +441,6 @@
                 element = dom.querySelector("#buyOneClick tbody");
             }
             if (!isNull(element)) {
-                element.insertAdjacentHTML('afterbegin', html);
-            }
-            if (!isNull(element)) {
                 element.insertAdjacentHTML('beforeend', html);
             }
         },
