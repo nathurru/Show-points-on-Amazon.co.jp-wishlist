@@ -602,7 +602,7 @@
                 '</div>';
             html += '</div>';
 
-            dom.querySelector(".wl-price-ppu-delivery-badge-row").innerHTML = html;
+            dom.querySelector(".price-section").innerHTML = html;
         },
     }
 
