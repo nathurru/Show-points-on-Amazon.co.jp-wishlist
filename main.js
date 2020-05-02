@@ -606,19 +606,11 @@
         },
     }
 
-    const oldVersionCacheClear = (() => {
-        for (const key in localStorage) {
-            if (/^SPAW_/.test(key)) {
-                localStorage.removeItem(key);
-            }
-        }
-    });
 
     const main = (async () => {
         const url = location.href;
         const dom = document
 
-        oldVersionCacheClear();
         storageClean();
 
         if (/\/(dp|gp)\//.test(url) && await parser.isKindlePage(dom)) {
