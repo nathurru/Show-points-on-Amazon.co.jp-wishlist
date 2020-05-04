@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Show points on Amazon.co.jp wishlist
-// @version      20.4.4
-// @description  Amazon.co.jpの欲しいものリストで、Kindleの商品にポイントを表示しようとします
+// @version      20.5.0
+// @description  Amazon.co.jpの欲しいものリストと検索ページで、Kindleの商品にポイントを表示しようとします
 // @namespace    https://greasyfork.org/ja/users/165645-agn5e3
 // @author       Nathurru
 // @match        https://www.amazon.co.jp/*/wishlist/*
@@ -10,6 +10,8 @@
 // @match        https://www.amazon.co.jp/dp/*
 // @match        https://www.amazon.co.jp/*/gp/*
 // @match        https://www.amazon.co.jp/gp/*
+// @match        https://www.amazon.co.jp/s*
+// @match        https://www.amazon.co.jp/b*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
@@ -109,7 +111,14 @@
                     this.delete(key);
                 }
             }
-        }
+        },
+        isCacheActive(asin) {
+            if (!storage.exists(asin)) {
+                return false;
+            } else {
+                return Date.now() - storage.load(asin).updatedAt <= RESCAN_INTERVAL;
+            }
+        },
     }
 
     const storageClean = (() => {
@@ -245,39 +254,81 @@
             return isNaN(price) ? null : price;
         },
 
-        async itemTitle(dom) {
-            const element = dom.querySelector('a[id^="itemName_"]');
-            if (isNull(element)) {
-                return null;
-            }
-            return element.innerText;
+        wishlist: {
+            async itemTitle(dom) {
+                const element = dom.querySelector('a[id^="itemName_"]');
+                if (isNull(element)) {
+                    return null;
+                }
+                return element.innerText;
+            },
+
+            async itemAsin(dom) {
+                const element = dom.querySelector('.price-section');
+                if (isNull(element)) {
+                    return undefined;
+                }
+                const attribute = element.getAttribute('data-item-prime-info');
+                if (isNull(attribute)) {
+                    return undefined;
+                }
+                return JSON.parse(attribute).asin
+            },
+
+            async isKindleItem(dom) {
+                return /Kindle版/.test(dom.innerText);
+            },
+
+            async isItemProcessed(dom) {
+                return dom.classList.contains('SPAW_PROCESSED');
+            },
+
         },
 
-        async isItemProcessed(dom) {
-            return dom.classList.contains('SPAW_PROCESSED');
+        search: {
+            async isKindleItem(dom) {
+                return /Kindle版/.test(dom.innerText);
+            },
+
+            async title(dom) {
+                const title = dom.querySelector("h2 > a");
+                if (isNull(title)) {
+                    return null;
+                }
+                return title.innerText
+            },
+
+            async asin(dom) {
+                return dom.getAttribute("data-asin");
+            },
+
+            async isBulkBuy(dom) {
+                return /まとめ買い/.test(dom.innerText);
+            }
         },
 
-        async isKindleItem(dom) {
-            const element = dom.querySelector('span[id^="item-byline-"]');
-            if (isNull(element)) {
-                return false;
-            }
-            return /Kindle版/.test(element.innerText);
-        },
 
-        async itemAsin(dom) {
-            const element = dom.querySelector('.price-section');
-            if (isNull(element)) {
-                return undefined;
+        bargain: {
+            async isKindleItem(dom) {
+                return /Kindle版/.test(dom.innerText);
+            },
+
+            async title(dom) {
+                const title = dom.querySelector("h2");
+                if (isNull(title)) {
+                    return null;
+                }
+                return title.innerText
+            },
+
+            async asin(dom) {
+                return dom.getAttribute("data-asin");
+            },
+
+            async isBulkBuy(dom) {
+                return /まとめ買い/.test(dom.innerText);
             }
-            const attribute = element.getAttribute('data-item-prime-info');
-            if (isNull(attribute)) {
-                return undefined;
-            }
-            return JSON.parse(attribute).asin
         }
-
-
     }
 
     const lowPriceBook = (async (isbns) => Promise.all(isbns.map(async (isbn) => {
@@ -470,9 +521,9 @@
 
         async push(nodes) {
             for (const dom of Array.from(nodes).filter((element, index) => element.nodeName === "LI")) {
-                const title = await parser.itemTitle(dom);
-                const asin = await parser.itemAsin(dom);
-                if (!await parser.isKindleItem(dom) || isUndefined(asin)) {
+                const title = await parser.wishlist.itemTitle(dom);
+                const asin = await parser.wishlist.itemAsin(dom);
+                if (!await parser.wishlist.isKindleItem(dom) || isUndefined(asin)) {
                     console.log('DROP:[' + asin + ']' + title);
                     continue;
                 }
@@ -521,25 +572,25 @@
         },
 
         async listItem(dom) {
-            const title = await parser.itemTitle(dom);
-            const asin = await parser.itemAsin(dom);
+            const title = await parser.wishlist.itemTitle(dom);
+            const asin = await parser.wishlist.itemAsin(dom);
 
-            console.log('ITEM INFO:[' + asin + ']' + title);
+            console.log('ITEM:[' + asin + ']' + title);
 
-            if (await parser.isItemProcessed(dom)) {
+            if (await parser.wishlist.isItemProcessed(dom)) {
                 await this.processEnd(dom);
                 return;
             }
 
             let data;
-            if (this.isCacheActive(asin)) {
-                console.log('CACHE LOAD:' + title);
+            if (storage.isCacheActive(asin)) {
+                console.log('CACHE LOAD:[' + asin + ']' + title);
                 data = storage.load(asin);
             } else {
-                console.log('CACHE EXPIRE:' + title);
+                console.log('CACHE EXPIRE:[' + asin + ']' + title);
                 const request = await get(url.amazon(asin));
                 data = await itemPage.itemInfo(domParser.parseFromString(request.response, 'text/html'));
-                console.log('DATA: ' + title, data);
+                console.log('DATA:[' + asin + ']' + title, data);
                 storage.save(data.asin, data);
             }
 
@@ -547,14 +598,6 @@
             await this.processEnd(dom);
 
             console.log('END:[' + asin + ']' + title);
-        },
-
-        isCacheActive(asin) {
-            if (!storage.exists(asin)) {
-                return false;
-            } else {
-                return Date.now() - storage.load(asin).updatedAt <= RESCAN_INTERVAL;
-            }
         },
 
         async processStart(dom) {
@@ -606,6 +649,286 @@
         },
     }
 
+    const searchPage = {
+        discoveries: [],
+
+        async push(nodes) {
+            for (const dom of Array.from(nodes)) {
+                const title = await parser.search.title(dom);
+                const asin = await parser.search.asin(dom);
+                if (!await parser.search.isKindleItem(dom) || isUndefined(asin) || await parser.search.isBulkBuy(dom)) {
+                    console.log('DROP:[' + asin + ']' + title);
+                    continue;
+                }
+                console.log('PUSH:[' + asin + ']' + title);
+                this.processStart(dom);
+                this.discoveries.push(dom);
+            }
+        },
+
+        async initialize(dom) {
+            await get('https://www.amazon.co.jp/gp/product/black-curtain-redirect.html');
+            await this.push(dom.querySelectorAll("[data-asin]"));
+            this.run();
+        },
+
+        async processStart(dom) {
+            const element = dom.querySelector("h2 > a");
+            if (!isNull(element)) {
+                element.insertAdjacentHTML('beforebegin', '<div class="a-row SPAW_PROCESSING" style="color:#EE0077">処理中</div>');
+            }
+        },
+
+        async processEnd(dom) {
+            dom.querySelector('.SPAW_PROCESSING').remove();
+            dom.classList.add("SPAW_PROCESSED");
+        },
+
+        async run() {
+            let runCount = 0;
+            while (this.discoveries.length > 0) {
+                if (runCount < 5) {
+                    ++runCount;
+                    this.item(this.discoveries.shift()).finally(() => --runCount);
+                } else {
+                    await sleep(100);
+                }
+            }
+        },
+
+        async item(dom) {
+            const title = await parser.search.title(dom);
+            const asin = await parser.search.asin(dom);
+
+            console.log('ITEM:[' + asin + ']' + title);
+
+            let data;
+            if (this.isCacheActive(asin)) {
+                console.log('CACHE LOAD:[' + asin + ']' + title);
+                data = storage.load(asin);
+            } else {
+                console.log('CACHE EXPIRE:[' + asin + ']' + title);
+                const request = await get(url.amazon(asin));
+                data = await itemPage.itemInfo(domParser.parseFromString(request.response, 'text/html'));
+                console.log('DATA:[' + asin + ']' + title, data);
+                if (!isNull(data.asin)) {
+                    storage.save(data.asin, data);
+                }
+            }
+
+            await this.viewPrice(dom, data);
+            await this.processEnd(dom);
+
+            console.log('END:[' + asin + ']' + title);
+        },
+
+        isCacheActive(asin) {
+            if (storage.exists(asin)) {
+                const data = storage.load(asin);
+                if (data.isBought) {
+                    return true;
+                }
+            }
+            return storage.isCacheActive(asin);
+        },
+
+        async viewPrice(dom, data) {
+            const paperPrice = taxIncluded(data.paperPrice);
+            const kindlePrice = data.kindlePrice;
+            const off = paperPrice - kindlePrice;
+            const offRate = rate(off, paperPrice)
+            const offRateColor = rateColor(offRate);
+            const point = data.pointReturn;
+            const pointRate = rate(point, kindlePrice)
+            const pointRateColor = rateColor(pointRate);
+
+            let html = '<div>';
+            if (data.isBought) {
+                html += '<div class="a-size-large" style="color:#EE0077">購入済</div>';
+                html += '<div>' +
+                    '<span class="a-size-base a-color-secondary">価格:￥</span>' +
+                    '<span class="a-size-base a-color-secondary">' + kindlePrice + '</span>' +
+                    '</div>';
+                const buyButton = dom.querySelector(".a-spacing-top-mini");
+                if (!isNull(buyButton)) {
+                    buyButton.remove();
+                }
+            } else {
+                if (!isNull(data.paperPrice)) {
+                    html += '<div>' +
+                        '<span class="a-price-symbol">紙の本:￥</span>' +
+                        '<span class="a-price-whole">' + paperPrice + '</span>' +
+                        '</div>';
+                } else if (isNull(data.isbn)) {
+                    html += '<div class="a-size-medium" style="color:#ff3c00">ISBN不明</div>';
+                }
+                html += '<div>' +
+                    '<span class="a-price-symbol a-color-price a-size-large">価格:￥</span>' +
+                    '<span class="a-price-whole a-color-price a-size-large">' + kindlePrice + '</span>' +
+                    '</div>';
+                if (!isNull(data.paperPrice)) {
+                    html += '<div style="color:' + offRateColor.color + ';background-color:' + offRateColor.bgColor + '">' +
+                        '<span class="a-price-symbol">割り引き:</span>' +
+                        '<span class="a-price-whole">' + off + '円( ' + offRate + '%割引)</span>' +
+                        '</div>';
+                }
+                html += '<div style="color:' + pointRateColor.color + ';background-color:' + pointRateColor.bgColor + '">' +
+                    '<span class="a-price-symbol">ポイント:</span>' +
+                    '<span class="a-price-whole">' + point + 'ポイント(' + pointRate + '%還元)</span>' +
+                    '</div>';
+            }
+            html += '</div>';
+
+            dom.querySelectorAll("div.a-row.a-size-base").forEach(element => {
+                if (/ポイント/.test(element.innerText) || /税込/.test(element.innerText) || /購入/.test(element.innerText)) {
+                    element.remove();
+                } else if (/[￥\\]/.test(element.innerText)) {
+                    element.innerHTML = html;
+                }
+            });
+        },
+    }
+
+    const bargainPage = {
+        discoveries: [],
+
+        async push(nodes) {
+            for (const dom of Array.from(nodes)) {
+                const title = await parser.bargain.title(dom);
+                const asin = await parser.bargain.asin(dom);
+                if (!await parser.search.isKindleItem(dom) || isUndefined(asin) || await parser.search.isBulkBuy(dom)) {
+                    console.log('DROP:[' + asin + ']' + title);
+                    continue;
+                }
+                console.log('PUSH:[' + asin + ']' + title);
+                this.processStart(dom);
+                this.discoveries.push(dom);
+            }
+        },
+
+        async initialize(dom) {
+            await get('https://www.amazon.co.jp/gp/product/black-curtain-redirect.html');
+            await this.push(dom.querySelectorAll(".s-result-list [data-asin]"));
+            this.run();
+        },
+
+        async processStart(dom) {
+            const element = dom.querySelector("h2");
+            if (!isNull(element)) {
+                element.insertAdjacentHTML('beforebegin', '<div class="a-row SPAW_PROCESSING" style="color:#EE0077">処理中</div>');
+            }
+        },
+
+        async processEnd(dom) {
+            dom.querySelector('.SPAW_PROCESSING').remove();
+            dom.classList.add("SPAW_PROCESSED");
+        },
+
+        async run() {
+            let runCount = 0;
+            while (this.discoveries.length > 0) {
+                if (runCount < 5) {
+                    ++runCount;
+                    this.item(this.discoveries.shift()).finally(() => --runCount);
+                } else {
+                    await sleep(100);
+                }
+            }
+        },
+
+        async item(dom) {
+            const title = await parser.bargain.title(dom);
+            const asin = await parser.bargain.asin(dom);
+
+            console.log('ITEM:[' + asin + ']' + title);
+
+            let data;
+            if (this.isCacheActive(asin)) {
+                console.log('CACHE LOAD:[' + asin + ']' + title);
+                data = storage.load(asin);
+            } else {
+                console.log('CACHE EXPIRE:[' + asin + ']' + title);
+                const request = await get(url.amazon(asin));
+                data = await itemPage.itemInfo(domParser.parseFromString(request.response, 'text/html'));
+                console.log('DATA:[' + asin + ']' + title, data);
+                if (!isNull(data.asin)) {
+                    storage.save(data.asin, data);
+                }
+            }
+
+            await this.viewPrice(dom, data);
+            await this.processEnd(dom);
+
+            console.log('END:[' + asin + ']' + title);
+        },
+
+        isCacheActive(asin) {
+            if (storage.exists(asin)) {
+                const data = storage.load(asin);
+                if (data.isBought) {
+                    return true;
+                }
+            }
+            return storage.isCacheActive(asin);
+        },
+
+        async viewPrice(dom, data) {
+            const paperPrice = taxIncluded(data.paperPrice);
+            const kindlePrice = data.kindlePrice;
+            const off = paperPrice - kindlePrice;
+            const offRate = rate(off, paperPrice)
+            const offRateColor = rateColor(offRate);
+            const point = data.pointReturn;
+            const pointRate = rate(point, kindlePrice)
+            const pointRateColor = rateColor(pointRate);
+
+            let html = '<div>';
+            if (data.isBought) {
+                html += '<div class="a-size-large" style="color:#EE0077">購入済</div>';
+                html += '<div>' +
+                    '<span class="a-size-base a-color-secondary">価格:￥</span>' +
+                    '<span class="a-size-base a-color-secondary">' + kindlePrice + '</span>' +
+                    '</div>';
+                const buyButton = dom.querySelector(".a-spacing-top-mini");
+                if (!isNull(buyButton)) {
+                    buyButton.remove();
+                }
+            } else {
+                if (!isNull(data.paperPrice)) {
+                    html += '<div>' +
+                        '<span class="a-price-symbol">紙の本:￥</span>' +
+                        '<span class="a-price-whole">' + paperPrice + '</span>' +
+                        '</div>';
+                } else if (isNull(data.isbn)) {
+                    html += '<div class="a-size-medium" style="color:#ff3c00">ISBN不明</div>';
+                }
+                html += '<div>' +
+                    '<span class="a-price-symbol a-color-price a-size-large">価格:￥</span>' +
+                    '<span class="a-price-whole a-color-price a-size-large">' + kindlePrice + '</span>' +
+                    '</div>';
+                if (!isNull(data.paperPrice)) {
+                    html += '<div style="color:' + offRateColor.color + ';background-color:' + offRateColor.bgColor + '">' +
+                        '<span class="a-price-symbol">割り引き:</span>' +
+                        '<span class="a-price-whole">' + off + '円( ' + offRate + '%割引)</span>' +
+                        '</div>';
+                }
+                html += '<div style="color:' + pointRateColor.color + ';background-color:' + pointRateColor.bgColor + '">' +
+                    '<span class="a-price-symbol">ポイント:</span>' +
+                    '<span class="a-price-whole">' + point + 'ポイント(' + pointRate + '%還元)</span>' +
+                    '</div>';
+            }
+            html += '</div>';
+
+            dom.querySelectorAll(".a-column > .a-row").forEach(element => {
+                console.log(element);
+                if (/ポイント/.test(element.innerText) || /税込/.test(element.innerText) || /Kindle Unlimited/.test(element.innerText) || /Kindle 価格/.test(element.innerText)) {
+                    element.remove();
+                } else if (/[￥\\]/.test(element.innerText)) {
+                    element.innerHTML = html;
+                }
+            });
+        },
+    }
 
     const main = (async () => {
         const url = location.href;
@@ -625,6 +948,12 @@
         } else if (/\/wishlist\//.test(url)) {
             console.log('WISHLIST PAGE');
             await wishlistPage.initialize(dom);
+        } else if (/\/s[?\/]/.test(url)) {
+            console.log('SEARCH PAGE');
+            await searchPage.initialize(dom);
+        } else if (/\/b[?\/]/.test(url)) {
+            console.log('BARGAIN PAGE');
+            await bargainPage.initialize(dom);
         }
     });
 
