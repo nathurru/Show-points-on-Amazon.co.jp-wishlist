@@ -398,7 +398,15 @@
 
         search: {
             async isKindleItem(dom) {
-                return /Kindle版/.test(dom.innerText);
+                const elements = dom.querySelectorAll('a.a-text-bold');
+                if (elements.length !== 0) {
+                    for (const element of elements) {
+                        if (/^Kindle版/.test(element.innerHTML.trim())) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
             },
 
             async title(dom) {
@@ -406,7 +414,7 @@
                 if (isNull(title)) {
                     return null;
                 }
-                return title.innerText
+                return title.innerText.trim();
             },
 
             async asin(dom) {
