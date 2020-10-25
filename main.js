@@ -922,7 +922,7 @@
             for (const dom of Array.from(nodes)) {
                 const title = await parser.bargain.title(dom);
                 const asin = await parser.bargain.asin(dom);
-                if (!await parser.search.isKindleItem(dom) || isUndefined(asin) || await parser.search.isBulkBuy(dom)) {
+                if (!await parser.bargain.isKindleItem(dom) || isUndefined(asin) || await parser.bargain.isBulkBuy(dom)) {
                     console.log('DROP:[' + asin + ']' + title);
                     continue;
                 }
