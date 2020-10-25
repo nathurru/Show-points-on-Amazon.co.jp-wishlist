@@ -312,7 +312,7 @@
         async kindlePrice(dom) {
             const element = dom.querySelector(".kindle-price");
             if (isNull(element)) {
-                return 0;
+                return null;
             }
             return parseInt(element.innerText.match(/[0-9,]+/)[0].replace(/,/, ''));
         },
@@ -504,20 +504,21 @@
         },
         async kindleInfo(dom, data) {
             return Promise.all([
+                data,
                 parser.kindlePrice(dom),
                 parser.pointReturn(dom),
                 parser.isBought(dom),
                 parser.isKdp(dom),
-            ]).then(([kindlePrice, pointReturn, isBought, isKdp]) => {
-                const data = {
-                    price: kindlePrice,
+            ]).then(([data, kindlePrice, pointReturn, isBought, isKdp]) => {
+                const info = {
+                    price: isNull(kindlePrice) ? data.kindlePrice : kindlePrice,
                     point: pointReturn,
                     isBought: isBought,
                     isKdp: isKdp,
                 };
-                console.log('KINDLE INFO: ', data)
-                return data;
-            })
+                console.log('KINDLE INFO: ', info)
+                return info;
+            });
         },
 
         async bookInfo(dom, data) {
