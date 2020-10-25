@@ -34,6 +34,67 @@
     const AUTOMATIC_CLEAN_FACTOR = 100;
     const TAX = 0.1;
 
+    const COMMERCIAL_PUBLISHERS = [
+        'DeNA',
+        'KADOKAWA',
+        'SBクリエイティブ',
+        'TOブックス',
+        'アース・スター エンターテイメント',
+        'あさ出版',
+        'アスコム',
+        'インプレス',
+        'エブリスタ ',
+        'オーム社',
+        'かんき出版',
+        'コミックハウス',
+        'サンマーク出版',
+        'ジーオーティー',
+        'スクウェア・エニックス',
+        'ダイヤモンド社',
+        'ドワンゴ',
+        'フレックスコミックス',
+        'ぶんか社',
+        'マール社',
+        'マイクロマガジン社',
+        'マイナビ出版',
+        'マガジンハウス',
+        'マッグガーデン',
+        'ワニブックス',
+        '一迅社',
+        '学研プラス',
+        '技術評論社',
+        '近代科学社',
+        '幻冬舎',
+        '講談社',
+        '主婦と生活社',
+        '主婦の友社',
+        '秋田書店',
+        '集英社',
+        '小学館',
+        '少年画報社',
+        '新書館',
+        '新潮社',
+        '双葉社',
+        '早川書房',
+        '竹書房',
+        '筑摩書房',
+        '中央公論新社',
+        '朝日新聞出版',
+        '東京書籍',
+        '東洋経済新報社',
+        '徳間書店',
+        '日経BP',
+        '日本文芸社',
+        '白泉社',
+        '扶桑社',
+        '文藝春秋',
+        '宝島社',
+        '芳文社',
+        '翔泳社',
+        '東京創元社',
+        '三栄',
+    ];
+
     const taxIncluded = listPrice => Math.floor(listPrice * (1 + TAX));
 
     const isNull = value => value === null;
@@ -73,6 +134,9 @@
         ndl(isbn) {
             return 'https://iss.ndl.go.jp/api/sru?operation=searchRetrieve&recordSchema=dcndl&recordPacking=xml&query=isbn=' + isbn;
         },
+        ndlPublisher(publisher) {
+            return 'https://iss.ndl.go.jp/api/sru?operation=searchRetrieve&recordSchema=dcndl&recordPacking=xml&maximumRecords=1&mediatype=1&query=publisher=' + publisher;
+        },
         amazon(asin) {
             return 'https://www.amazon.co.jp/dp/' + asin;
         },
@@ -106,6 +170,9 @@
             const keys = this.list();
             const now = Date.now();
             for (const key of keys) {
+                if (key === 'SETTINGS' || key === 'PUBLISHERS') {
+                    continue;
+                }
                 const data = this.load(key);
                 if (now - data.updatedAt > CACHE_LIFETIME) {
                     this.delete(key);
@@ -198,6 +265,42 @@
             return /商品を注文/.test(element.innerText);
         },
 
+        async isKdp(dom) {
+            const elements = dom.querySelectorAll("#detailBullets_feature_div .a-list-item");
+
+            for (const element of elements) {
+                if (/出版社/.test(element.innerText)) {
+                    const m = element.querySelector('span:nth-child(2)').innerText.match(/([^\(（\/]+)/);
+                    if (isNull(m)) {
+                        return true;
+                    }
+                    const publisher = m[1];
+                    console.log('publisher:' + publisher);
+
+                    const findIndex = COMMERCIAL_PUBLISHERS.findIndex(item => new RegExp(item).test(publisher));
+                    if (findIndex !== -1) {
+                        return false;
+                    }
+
+                    let publishers = storage.load('PUBLISHERS');
+                    if (isNull(publishers)) {
+                        publishers = {};
+                    } else if (!isUndefined(publishers[publisher])) {
+                        console.log('publisher cache hit');
+                        return !publishers[publisher];
+                    }
+
+                    const request = await get(url.ndlPublisher(publisher));
+                    const hasPublisher = await parser.hasPublisher(request.responseXML);
+                    publishers[publisher] = hasPublisher;
+                    storage.save('PUBLISHERS', publishers);
+
+                    return !hasPublisher;
+                }
+            }
+            return true;
+        },
+
         async asin(dom) {
             const element = dom.querySelector("input[name='ASIN.0']");
             if (isNull(element)) {
@@ -252,6 +355,14 @@
                 .match(/[0-9]+/)[0]);
 
             return isNaN(price) ? null : price;
+        },
+
+        async hasPublisher(xml) {
+            const element = xml.querySelector("numberOfRecords");
+            if (isNull(element)) {
+                return null;
+            }
+            return element.innerHTML !== '0';
         },
 
         wishlist: {
@@ -378,6 +489,7 @@
                     kindlePrice: kindleInfo.price,
                     pointReturn: kindleInfo.point,
                     isBought: kindleInfo.isBought,
+                    isKdp: kindleInfo.isKdp,
                     updatedAt: Date.now(),
                 };
             });
@@ -387,11 +499,13 @@
                 parser.kindlePrice(dom),
                 parser.pointReturn(dom),
                 parser.isBought(dom),
-            ]).then(([kindlePrice, pointReturn, isBought]) => {
+                parser.isKdp(dom),
+            ]).then(([kindlePrice, pointReturn, isBought, isKdp]) => {
                 const data = {
                     price: kindlePrice,
                     point: pointReturn,
                     isBought: isBought,
+                    isKdp: isKdp,
                 };
                 console.log('KINDLE INFO: ', data)
                 return data;
@@ -590,6 +704,7 @@
                 console.log('CACHE EXPIRE:[' + asin + ']' + title);
                 const request = await get(url.amazon(asin));
                 data = await itemPage.itemInfo(domParser.parseFromString(request.response, 'text/html'));
+
                 console.log('DATA:[' + asin + ']' + title, data);
                 storage.save(data.asin, data);
             }
@@ -759,6 +874,8 @@
                         '<span class="a-price-symbol">紙の本:￥</span>' +
                         '<span class="a-price-whole">' + paperPrice + '</span>' +
                         '</div>';
+                } else if (data.isKdp) {
+                    html += '<div class="a-size-medium" style="color:#FFFFFF;background-color:#ff0000">KDP</div>';
                 } else if (isNull(data.isbn)) {
                     html += '<div class="a-size-medium" style="color:#ff3c00">ISBN不明</div>';
                 }
