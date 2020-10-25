@@ -550,7 +550,7 @@
         },
 
         async addPaperPrice(dom, paperPrice, kindlePrice) {
-            if (isNull(paperPrice) || paperPrice === 0 || !isNull(dom.querySelector('.print-list-price'))) {
+            if (isNull(paperPrice) || paperPrice === 0) {
                 return;
             }
 
@@ -581,6 +581,10 @@
                 '</tr>';
 
             let element = dom.querySelector('#buybox tbody');
+            let childNode = dom.querySelector('.print-list-price');
+            if (!isNull(childNode)) {
+                childNode.parentNode.removeChild(childNode);
+            }
             if (isNull(element)) {
                 element = dom.querySelector("#buyOneClick tbody");
             }
