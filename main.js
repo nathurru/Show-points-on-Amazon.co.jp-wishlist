@@ -909,11 +909,15 @@
             }
             html += '</div>';
 
+            let isChanged = false;
             dom.querySelectorAll("div.a-row.a-size-base").forEach(element => {
                 if (/ポイント/.test(element.innerText) || /税込/.test(element.innerText) || /購入/.test(element.innerText)) {
                     element.remove();
                 } else if (/[￥\\]/.test(element.innerText)) {
-                    element.innerHTML = html;
+                    if (!isChanged) {
+                        element.innerHTML = html;
+                        isChanged = true;
+                    }
                 }
             });
         },
