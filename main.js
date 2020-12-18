@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Show points on Amazon.co.jp wishlist
-// @version      20.10.0
+// @version      20.12.0
 // @description  Amazon.co.jpの欲しいものリストと検索ページで、Kindleの商品にポイントを表示しようとします
 // @namespace    https://greasyfork.org/ja/users/165645-agn5e3
 // @author       Nathurru
