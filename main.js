@@ -428,10 +428,6 @@
 
 
         bargain: {
-            async isKindleItem(dom) {
-                return /Kindle版/.test(dom.innerText);
-            },
-
             async title(dom) {
                 const title = dom.querySelector("h2");
                 if (isNull(title)) {
@@ -441,12 +437,16 @@
             },
 
             async asin(dom) {
-                return dom.getAttribute("data-asin");
+                const element = dom.querySelector('span.a-declarative');
+                if (isNull(element)) {
+                    return undefined;
+                }
+                const m = JSON.parse(element.getAttribute("data-a-popover")).url.match(/asin=([A-Z0-9]{10})/);
+                if (isNull(m)) {
+                    return undefined;
+                }
+                return m[1];
             },
-
-            async isBulkBuy(dom) {
-                return /まとめ買い/.test(dom.innerText);
-            }
         }
     }
 
@@ -926,7 +926,7 @@
             for (const dom of Array.from(nodes)) {
                 const title = await parser.bargain.title(dom);
                 const asin = await parser.bargain.asin(dom);
-                if (!await parser.bargain.isKindleItem(dom) || isUndefined(asin) || await parser.bargain.isBulkBuy(dom)) {
+                if (isUndefined(asin)) {
                     console.log('DROP:[' + asin + ']' + title);
                     continue;
                 }
@@ -938,7 +938,7 @@
 
         async initialize(dom) {
             await get('https://www.amazon.co.jp/gp/product/black-curtain-redirect.html');
-            await this.push(dom.querySelectorAll(".s-result-list [data-asin]"));
+            await this.push(dom.querySelectorAll(".apb-browse-searchresults-product"));
             this.run();
         },
 
@@ -1048,15 +1048,11 @@
                     '</div>';
             }
             html += '</div>';
-
-            dom.querySelectorAll(".a-column > .a-row").forEach(element => {
-                console.log(element);
-                if (/ポイント/.test(element.innerText) || /税込/.test(element.innerText) || /Kindle Unlimited/.test(element.innerText) || /Kindle 価格/.test(element.innerText)) {
-                    element.remove();
-                } else if (/[￥\\]/.test(element.innerText)) {
-                    element.innerHTML = html;
-                }
-            });
+            const parent = dom.querySelector('.a-price').parentNode;
+            while (parent.lastChild) {
+                parent.removeChild(parent.lastChild);
+            }
+            parent.insertAdjacentHTML('beforebegin', html)
         },
     }
 
